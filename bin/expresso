@@ -19,6 +19,9 @@ var assert = require('assert'),
     fs = require('fs'),
     defer;
 
+
+var startTime = new Date().getTime();
+
 /**
  * Setup the regex which is used to match test files.
  * Adjust it to include coffeescript files if CS is available
@@ -736,6 +739,7 @@ function error(suite, test, err) {
             ? test
             : suite + ' ' + test;
     print('\n   [bold]{' + label + '}: [red]{' + name + '}' + stack + '\n');
+	process.exit(1);
 }
 
 /**
@@ -756,57 +760,70 @@ function runSuite(title, tests, fn) {
     // Setup
     var setup = tests.setup || function(fn){ fn(); };
     var teardown = tests.teardown || function(fn){ fn(); };
+    var globalSetup = tests.globalSetup || function(fn) { fn(); };
+    var globalTeardown = tests.globalTeardown || function(fn) { fn(); };	
 
-    // Iterate tests
-    (function next(){
-        if (keys.length) {
-            var key,
-                test = tests[key = keys.shift()];
-            // Non-tests
-            if (key === 'setup' || key === 'teardown') return next();
+	globalSetup(function() {
+	    // Iterate tests
+	    (function next(){
+	        if (keys.length) {
+	            var key,
+	                test = tests[key = keys.shift()];
 
-            // Run test
-            if (test) {
-                try {
-                    ++testcount;
-                    assert.testTitle = key;
-                    if (serial) {
-                        sys.print('.');
-                        if (++dots % 25 === 0) sys.print('\n');
-                        setup(function(){
-                            if (test.length < 1) {
-                                test();
-                                teardown(next);
-                            } else {
-                                var id = setTimeout(function(){
-                                    throw new Error("'" + key + "' timed out");
-                                }, timeout);
-                                test(function(){
-                                    clearTimeout(id);
-                                    teardown(next);
-                                });
-                            }
-                        });
-                    } else {
-                        test(function(fn){
-                            process.on('beforeExit', function(){
-                                try {
-                                    fn();
-                                } catch (err) {
-                                    error(title, key, err);
-                                }
-                            });
-                        });
-                    }
-                } catch (err) {
-                    error(title, key, err);
-                }
-            }
-            if (!serial) next();
-        } else if (serial) {
-          fn();
-        }
-    })();
+	            // Non-tests
+	            if (key === 'setup' || key === 'teardown' || key === 'globalSetup' || key === 'globalTeardown') return next();
+
+	            // Run test
+	            if (test) {
+	                try {
+	                    ++testcount;
+	                    assert.testTitle = key;
+	                    if (serial) {
+	                        sys.print('.');
+	                        if (++dots % 25 === 0) sys.print('\n');
+	                        setup(function(){
+	                            if (test.length < 1) {
+	                                test();
+	                                teardown(next);
+	                            } else {
+	                                var id = setTimeout(function(){
+	                                    throw new Error("'" + key + "' timed out");
+	                                }, timeout);
+	                                test(function(){
+	                                    clearTimeout(id);
+	                                    teardown(next);
+	                                });
+	                            }
+	                        });
+	                    } else {
+	                        test(function(fn){
+	                            process.on('beforeExit', function(){
+	                                try {
+	                                    fn();
+	                                } catch (err) {
+	console.log('CAUGHT ERROR');
+	                                    error(title, key, err);
+	                                }
+	                            });
+	                        });
+	                    }
+	                } catch (err) {
+	console.log('CAUGHT ERROR2');
+	                    error(title, key, err);
+						globalTeardown(function() {
+			     	          fn();
+			              });
+	                }
+	            }
+	            if (!serial) next();
+	        } else if (serial) {
+              globalTeardown(function() {
+     	          fn();
+              });
+
+	        }
+	    })();
+	});
 }
 
 /**
@@ -816,6 +833,13 @@ function runSuite(title, tests, fn) {
 function report() {
     cursor(true);
     process.emit('beforeExit');
+
+	var endTime = new Date().getTime();
+	var seconds = (endTime-startTime)/1000;
+	print('Tests took ' + seconds + ' seconds');
+	
+
+
     if (failures) {
         print('\n   [bold]{Failures}: [red]{' + failures + '}\n\n');
         notify('Failures: ' + failures);
@@ -847,6 +871,7 @@ function notify(msg) {
 // Report uncaught exceptions
 
 process.on('uncaughtException', function(err){
+	console.log('uncaughtException');
     error('uncaught', 'uncaught', err);
 });
 
